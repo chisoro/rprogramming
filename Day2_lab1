@@ -1,0 +1,106 @@
+
+### Empirical model of crop response to fertilizer in sub-Saharan Africa
+###
+
+
+library(terra)
+library(geodata)
+## some data we will use for plotting
+w <- world()
+ssa_ext <- ext(-18, 52, -35, 20) 
+ssa <- crop(w, ssa_ext)
+borders <- function() lines(ssa)
+
+## model 
+d <- read.csv("experimental_data.csv")
+
+library(randomForest)
+
+f1 <- yield_kg_ha ~ kg_N_ha + kg_P_ha + kg_K_ha
+m1 <- randomForest(f1, data=d)
+
+## evaluate
+m1
+varImpPlot(m1)
+partialPlot(m1, d, "kg_N_ha")
+partialPlot(m1, d, "kg_P_ha")
+
+## predict the effect of a treatment
+
+treat1 <- data.frame(kg_N_ha = seq(0,200,10),  kg_P_ha = 0, kg_K_ha = 0)
+p1 <- predict(m1, treat1)
+plot(treat1$kg_N_ha, p1, ylim=c(0,6000), pch="+")
+
+
+### make the model spatially explicit 
+f2 <- yield_kg_ha ~ kg_N_ha + kg_P_ha + kg_K_ha + longitude + latitude 
+m2 <- randomForest(f2, data=d)
+
+## evaluate
+
+## predict spatially with "interpolate"
+
+library(terra)
+# a raster for ssa with an arbitrary resolution
+r <- rast(ssa_ext, res=1/6)
+
+low <- data.frame(kg_N_ha=0, kg_P_ha=0, kg_K_ha=0)
+x1 <- interpolate(r, m2, xyNames=c("longitude", "latitude"), const=low, wopt=list(names="N0_P0_K0"))
+
+high <- data.frame(kg_N_ha=150, kg_P_ha=50, kg_K_ha=25)
+x2 <- interpolate(r, m2, xyNames=c("longitude", "latitude"), const=high, wopt=list(names="N150_P50_K25"))
+
+x <- c(x1, x2)
+x <- mask(x, ssa)
+plot(x, fun=borders)
+
+
+### use environmental predictors extracted from rasters
+
+ph <- soil_af_isda("pH.H2O", depth=20) 
+oc <- soil_af_isda("oc", depth=20) 
+clay <- soil_af_isda("clay", depth=20) 
+soil <- c(ph, oc, clay)
+names(soil) <- c("ph", "oc", "clay")
+
+
+clim <- worldclim_global("bio", 10)
+#https://www.worldclim.org/data/bioclim.html
+clim <- clim[[c(1,12)]]
+names(clim) <- c("temp", "rain")
+
+esoils <- extract(soil, d[,c("longitude", "latitude")], ID=FALSE)
+eclim <- extract(clim, d[,c("longitude", "latitude")], ID=FALSE)
+
+dd <- cbind(d, esoils, eclim)
+
+f3 <- yield_kg_ha ~ kg_N_ha + kg_P_ha + kg_K_ha + rain + temp + ph + oc + clay
+m3 <- randomForest(f3, data=dd)
+
+clim <- crop(clim, soil)
+soil <- aggregate(soil, 20, mean, na.rm=TRUE)
+env <- c(clim, soil)
+env <- crop(env, ssa_ext)
+
+y1 <- predict(env, m3, const=low)
+y2 <- predict(env, m3, const=high)
+dy <- y2 - y1
+plot(dy); lines(ssa)
+
+
+### use environmental predictors and location
+
+f4 <- yield_kg_ha ~ kg_N_ha + kg_P_ha + kg_K_ha + rain + temp + ph + oc + clay + longitude + latitude
+m4 <- randomForest(f4, data=dd)
+
+z1 <- ________________
+z2 <- ________________
+dz <- z2 - z1
+plot(dz); lines(ssa)
+
+
+#### questions 
+#1) which is the best model?
+#2) can you simplify it without losing much quality?
+#3) show the effect of 50 kg P on maize yield
+#4) what is the highest predicted P efficiency, and what is the lowest? 

@@ -1,0 +1,95 @@
+# raster data
+
+# Carefully read http://rspatial.org/spatial/4-rasterdata.html
+# create raster data examples
+
+# And quickly read 
+# http://rspatial.org/spatial/8-rastermanip.html
+
+# We are going to extract annual average rainfall in Tanzania 
+# for all years (that we have data for) of Tanzania 
+# We are using a raster data that covers Tanzania and more and has monthly data 
+
+# Later on we will use these data to see if variation in rainfall predicts
+# variation in maize yield.
+
+# where is the monthly precipitation data ?
+path <- "D:/harare/climate/prec"
+
+library(terra)
+
+# get all the relevant files
+ff <- list.files(path, pattern='.tif$', full.names=TRUE)
+
+# we want them in order. In this case, sort works (not always because 11 sorts before 2)!)
+ff <- sort(ff)
+s <- rast(ff)
+# we have 408 layers
+s
+
+# let's plot a few
+plot(s)
+# (by default, only the first 16 are plotted)
+
+# the first three
+plot(s, 1:3)
+
+
+# let's look at the mean for each month
+# we use the tapp function. We tell it to make 12 layers (by combining the 1st, with the 13th, 25th, etc. layer --- recycling at work).
+rainmonth <- tapp(s, 1:12, mean)
+# set the right names
+names(rainmonth) <- month.name
+
+# or in one step
+#rainmonth <- tapp(s, 1:12, mean, wopt=list(names=month.name))
+
+rainmonth
+plot(rainmonth)
+
+# annual average total rainfall
+rain <- sum(rainmonth)
+plot(rain)
+
+# and the total annual precipitation averaged over all cells
+mrain <- global(rainmonth, mean, na.rm=TRUE)
+barplot(t(mrain))
+
+# we want to compare annual maize yield with annual rainfall. 
+# the Tanzania dry season is in the middle of the year
+# it may be better to have "rain-years" that start in July and run through June
+
+# we make explicit indices to group months
+# 34 years, 12 months
+i <- rep(1:34, each=12)
+# but the first 6 months are the last 6 months of the previous rain-year
+i <- c(rep(1,6), i+1)
+# and now we need to remove the last 6 months 
+i <- i[1:(length(i)-6)]
+i
+
+# tapp again, now with our new indices to get yearly totals
+ss <- tapp(s, i, sum)
+# set the layer names
+names(ss) <- 1980:2014
+# the first and the last year are incomplete 
+ss <- ss[[ -c(1, nlyr(ss)) ]]
+
+plot(ss)
+
+# We only want areas inside Tanzania
+tza <- geodata::gadm(country="TZA", level=1)
+ss <- mask(ss, tza)
+plot(ss)
+
+# save to file
+ss <- writeRaster(ss, "tza_annual_precipitation.tif", datatype="INT2S")
+ss
+
+# compute the average monthly rainfall for the entire country
+x <- global(ss, mean, na.rm=TRUE)
+x
+
+# plot the time series
+plot(as.integer(rownames(x)), x[,1])
+
